@@ -1,0 +1,13 @@
+{
+  "name": "hpx-tablet",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm -w tablet-ui run dev",
+    "build": "npm -w tablet-ui run build",
+    "preview": "npm -w tablet-ui run preview"
+  }
+}

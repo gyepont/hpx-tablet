@@ -1,0 +1,348 @@
+:root{
+  --hpx-text: rgba(255,255,255,0.92);
+  --hpx-muted: rgba(255,255,255,0.64);
+  --hpx-accent: #ffd84c;
+
+  --hpx-card: rgba(12, 14, 24, 0.60);
+  --hpx-frame: rgba(8, 10, 16, 0.52);
+
+  --hpx-radius: 0px;
+}
+
+*{ box-sizing: border-box; }
+html, body, #root{ height: 100%; }
+
+body{
+  margin: 0;
+  color: var(--hpx-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  background: transparent;
+  overflow: hidden;
+}
+
+body.web-bg{
+  background:
+    radial-gradient(1200px 700px at 30% 20%, rgba(255, 216, 76, 0.12), transparent 60%),
+    linear-gradient(180deg, #07080c, #101326);
+}
+
+body.nui-hidden{ background: transparent !important; }
+body.nui-hidden #root{ display: none; }
+
+/* ====== STAGE ====== */
+.hpx-stage{
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hpx-stage-pad, 18px);
+}
+
+.hpx-backdrop{ position:absolute; inset:0; background: transparent; }
+
+/* ====== TABLET WINDOW ====== */
+.hpx-frame{
+  position: relative;
+  width: min(var(--hpx-frame-w, 1480px), var(--hpx-frame-maxw, 98vw));
+  height: min(var(--hpx-frame-h, 920px), var(--hpx-frame-maxh, 95vh));
+  background: var(--hpx-frame);
+  border: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 28px 90px rgba(0,0,0,0.60);
+  border-radius: var(--hpx-radius);
+  overflow: hidden;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.hpx-frame::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border: 1px solid rgba(255,216,76,0.12);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.65), inset 0 0 55px rgba(255,216,76,0.05);
+}
+
+.hpx-frame::after{
+  content:"";
+  position:absolute;
+  inset:-20% -40%;
+  pointer-events:none;
+  background: linear-gradient(115deg, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%);
+  transform: translateX(-15%) translateY(-5%);
+  opacity: 0.22;
+}
+
+.hpx-frame.hpx-idle{
+  opacity: var(--hpx-idle-opacity, 0.62);
+  transform: translateY(var(--hpx-idle-ty, 2px));
+}
+
+/* ====== TOPBAR ====== */
+.hpx-topbar{
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  background: rgba(0,0,0,0.18);
+  backdrop-filter: blur(10px);
+  position: relative;
+  z-index: 2;
+}
+
+.hpx-btn{
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.20);
+  color: rgba(255,255,255,0.90);
+  border-radius: 0px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.hpx-btnAccent{
+  border-color: rgba(255,216,76,0.28);
+  box-shadow: 0 0 0 3px rgba(255,216,76,0.06);
+}
+
+/* ====== SCREEN ====== */
+.hpx-screen{
+  position: relative;
+  height: calc(100% - 58px);
+  overflow: hidden;
+}
+
+.hpx-wallpaper{
+  position: absolute;
+  inset: 0;
+  background: var(--hpx-wallpaper, linear-gradient(180deg, rgba(0,0,0,0.4), rgba(0,0,0,0.2)));
+  background-size: cover;        /* FIX: kép kitölt */
+  background-position: center;   /* FIX */
+  background-repeat: no-repeat;  /* FIX */
+  filter: saturate(1.08) contrast(1.02);
+  opacity: 1;
+}
+
+.hpx-scanlines{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background: repeating-linear-gradient(
+    180deg,
+    rgba(255,255,255,0.04) 0px,
+    rgba(255,255,255,0.04) 1px,
+    transparent 2px,
+    transparent 7px
+  );
+}
+
+.hpx-dust{
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.10;
+  background-image:
+    radial-gradient(circle at 20% 30%, rgba(255,255,255,0.08) 0 1px, transparent 2px),
+    radial-gradient(circle at 70% 40%, rgba(255,216,76,0.10) 0 1px, transparent 2px),
+    radial-gradient(circle at 45% 75%, rgba(255,255,255,0.06) 0 1px, transparent 2px);
+  background-size: 240px 240px;
+  animation: hpx-dust 10s linear infinite;
+}
+
+@keyframes hpx-dust{
+  0%{ transform: translateY(0px); }
+  100%{ transform: translateY(-24px); }
+}
+
+/* ====== HOME ====== */
+.hpx-home{
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  gap: 12px;
+}
+
+.hpx-homeTop{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.hpx-widgets{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.hpx-widget{
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.16);
+  padding: 10px 12px;
+  border-radius: 0px;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  backdrop-filter: blur(8px);
+}
+
+.hpx-widgetTitle{ opacity: 0.72; font-size: 12px; }
+.hpx-widgetValue{ font-weight: 900; letter-spacing: 0.3px; }
+
+.hpx-homeActions{
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* ====== APP GRID ====== */
+.hpx-grid{
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+
+.hpx-appTile{
+  position: relative;
+  border-radius: 0px;
+  padding: 12px 10px;
+  cursor: pointer;
+  user-select: none;
+  background: rgba(0,0,0,0.14);
+  border: 1px solid rgba(255,255,255,0.10);
+  backdrop-filter: blur(10px);
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.hpx-appTile:hover{
+  transform: translateY(-1px);
+  border-color: rgba(255,216,76,0.22);
+  box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+}
+
+.hpx-appIcon{ font-size: 24px; margin-bottom: 8px; }
+.hpx-appName{ font-size: 13px; opacity: 0.92; }
+.hpx-appHint{ margin-top: 6px; font-size: 11px; opacity: 0.60; }
+
+.hpx-editBadge{
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 11px;
+  opacity: 0.85;
+  padding: 3px 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.18);
+}
+
+.hpx-pinBadge{
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 11px;
+  opacity: 0.9;
+  padding: 3px 6px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.18);
+}
+
+.hpx-appTileEdit{ cursor: grab; }
+.hpx-appTileEdit:active{ cursor: grabbing; }
+
+.hpx-appTileOver{
+  border-color: rgba(255,216,76,0.45) !important;
+  box-shadow: 0 0 0 3px rgba(255,216,76,0.10), 0 16px 45px rgba(0,0,0,0.35);
+}
+
+/* ====== DOCK ====== */
+.hpx-dock{
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+  padding: 10px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  border-radius: 0px;
+  backdrop-filter: blur(10px);
+}
+
+.hpx-dockBtn{
+  width: 58px;
+  height: 46px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.12);
+  color: rgba(255,255,255,0.92);
+  cursor: pointer;
+  border-radius: 0px;
+  display: grid;
+  place-items: center;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.hpx-dockBtn:hover{
+  transform: translateY(-1px);
+  border-color: rgba(255,216,76,0.28);
+}
+.hpx-dockBtnOver{
+  border-color: rgba(255,216,76,0.50) !important;
+  box-shadow: 0 0 0 3px rgba(255,216,76,0.10);
+}
+
+/* ====== APP VIEW ====== */
+.hpx-appView{
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  padding: 14px;
+  overflow: auto;
+  background: rgba(0,0,0,0.16);
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+
+/* ====== TABLET-BELI ÉRTESÍTÉSEK ====== */
+.hpx-toastStack{
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 20; /* a wallpaper felett, de a frame-en belül */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, 40%);
+  pointer-events: none;
+}
+
+.hpx-toast{
+  pointer-events: auto;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.22);
+  backdrop-filter: blur(10px);
+  padding: 10px 12px;
+  border-radius: 0px;
+}
+
+.hpx-toastTitle{ font-weight: 900; margin-bottom: 4px; }
+.hpx-toastMsg{ opacity: 0.78; font-size: 13px; }
+
+.hpx-notifPanel{
+  position: absolute;
+  top: 58px;
+  right: 0;
+  width: min(520px, 46%);
+  height: calc(100% - 58px);
+  z-index: 18;
+  border-left: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.22);
+  backdrop-filter: blur(12px);
+  padding: 12px;
+  overflow: auto;
+}
