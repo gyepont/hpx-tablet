@@ -13,3 +13,15 @@ IDE bemásolod AZT, AMIT ÉN ÍRTAM NEKED (a teljes választ / cat blokkokat is)
 IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 ```
 
+
+## 2025-12-28 17:47:25 — MDT: következő lépés
+
+```
+- Mit csináltunk:
+  - ...
+- Miért:
+  - ...
+- Következő:
+  - ...
+```
+
