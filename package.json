@@ -8,6 +8,9 @@
   "scripts": {
     "dev": "npm -w tablet-ui run dev",
     "build": "npm -w tablet-ui run build",
-    "preview": "npm -w tablet-ui run preview"
+    "preview": "npm -w tablet-ui run preview",
+    "backup": "./scripts/backup.sh",
+    "tablet:deploy": "./scripts/tablet-deploy.sh",
+    "ai:log": "./scripts/ai-log.sh"
   }
 }
