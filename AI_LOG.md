@@ -83,3 +83,12 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Stabil állapot mentése push előtt.
 ```
 
+
+## 2025-12-30 00:21:52 — MDT: Evidence kontextus mentés (lastReportId)
+
+```
+- MDT-ben report megnyitás után elmentjük a report ID-t localStorage-be:
+  hpx:evidence:lastReportId:v1
+- Kezeli a korábbi hibát is, ha szó szerinti \n maradt a TS kódban.
+```
+
