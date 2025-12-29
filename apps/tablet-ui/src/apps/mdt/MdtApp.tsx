@@ -226,6 +226,8 @@ export default function MdtApp() {
     setSelectedReportId(reportId);
     const res = await rpcCall("mdt:getReport", { reportId }, { timeoutMs: 3000 });
     setReportDetail(res.report);
+    try { localStorage.setItem("hpx:evidence:lastReportId:v1", JSON.stringify(res.report.id)); } catch {}
+
   }
 
   async function refreshBolos(): Promise<void> {
