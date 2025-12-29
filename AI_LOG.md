@@ -45,3 +45,14 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Timeline megjelenítés
 ```
 
+
+## 2025-12-29 04:51:10 — Tablet: Ügyek (Cases) app - MVP
+
+```
+- Új app: Ügyek (Cases) (MVP, backend nélkül)
+- LocalStorage mentés (hpx:cases:v1)
+- Ügy létrehozás + lista + kereső + státusz szűrés
+- Ügy részletek: státusz/prioritás/helyszín/tagek szerkesztés
+- Későbbi integráció előkészítve: Report/Evidence/BOLO link mezők (most üres listák)
+```
+
