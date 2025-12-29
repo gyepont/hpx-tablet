@@ -65,3 +65,12 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Build zöld + deploy script lefut.
 ```
 
+
+## 2025-12-29 18:50:32 — MDT ↔ Bizonyítékok kapcsolat (checkpoint)
+
+```
+- MDT: amikor megnyitsz egy jelentést, elmentjük a report ID-t localStorage-ba (evidence kontextushoz).
+- Bizonyítékok app: ezt a “utolsó megnyitott jelentés” kontextust fel tudja használni.
+- Build + deploy zöld.
+```
+
