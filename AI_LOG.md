@@ -34,3 +34,14 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - allowDrop: ha csak deklarált volt és nem használt, törölve (TS6133 fix).
 ```
 
+
+## 2025-12-29 04:41:54 — Evidence app (MVP)
+
+```
+- Új tablet app: Bizonyítékok (csak police/admin)
+- Lista + kereső + szűrők (státusz/típus)
+- Részletek: cím, jegyzet, tagek, kapcsolt report ID-k
+- Átadás (chain-of-custody) + lezárás (sealed → read-only)
+- Timeline megjelenítés
+```
+
