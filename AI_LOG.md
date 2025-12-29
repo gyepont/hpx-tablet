@@ -25,3 +25,12 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
   - ...
 ```
 
+
+## 2025-12-29 03:27:40 — Fix: MDT build (kommentek kiszedve + allowDrop)
+
+```
+- MdtApp.tsx: minden /* ... */ blokk komment eltávolítva (JSX-ban is).
+- Hibás "{ { ..." minták javítva (style={{}} nem sérül).
+- allowDrop: ha csak deklarált volt és nem használt, törölve (TS6133 fix).
+```
+

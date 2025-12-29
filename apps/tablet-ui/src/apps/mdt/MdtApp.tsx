@@ -616,7 +616,7 @@ export default function MdtApp() {
 
   return (
     <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 12 }}>
-      {/* Left menu */}
+      {}
       <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.16)", padding: 10 }}>
         <div style={{ fontWeight: 900, marginBottom: 10 }}>MDT</div>
         {(["Dispatch", "Egységek", "Jelentések", "Személy", "Jármű", "BOLO"] as Tab[]).map((t) => (
@@ -632,7 +632,7 @@ export default function MdtApp() {
         <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>{transport.toUpperCase()}</div>
       </div>
 
-      {/* Content */}
+      {}
       <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.16)", padding: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
           <div>
