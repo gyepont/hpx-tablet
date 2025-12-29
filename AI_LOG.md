@@ -56,3 +56,12 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Későbbi integráció előkészítve: Report/Evidence/BOLO link mezők (most üres listák)
 ```
 
+
+## 2025-12-29 18:38:55 — Fix: evidence + MDT report context (build zöld)
+
+```
+- EvidenceApp: TS build fix (EvidenceEvent action típus / kompatibilitás).
+- MDT: utolsó megnyitott reportId mentése localStorage-ba (hpx:evidence:lastReportId:v1), \n szemét nélkül.
+- Build zöld + deploy script lefut.
+```
+
