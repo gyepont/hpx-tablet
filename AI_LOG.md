@@ -92,3 +92,10 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Kezeli a korábbi hibát is, ha szó szerinti \n maradt a TS kódban.
 ```
 
+
+## 2025-12-30 00:33:14 — Evidence: default linkedReportId = lastReportId
+
+```
+- EvidenceApp: új bizonyíték alapból felveszi a lastReportId-t linkedReportId-ként (ha a kódban üres string volt).
+```
+
