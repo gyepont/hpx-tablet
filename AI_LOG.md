@@ -74,3 +74,12 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Build + deploy zöld.
 ```
 
+
+## 2025-12-29 18:56:51 — Mentés: stabil állapot (UI + MDT + Evidence/Cases)
+
+```
+- Build zöld (tsc + vite).
+- Deploy a resources/hp-tablet/web mappába.
+- Stabil állapot mentése push előtt.
+```
+
