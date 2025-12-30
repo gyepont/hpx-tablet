@@ -119,3 +119,12 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - Lista a reporthoz linkelt bizonyítékokról + ID másolás.
 ```
 
+
+## 2025-12-30 04:17:05 — Evidence v2: iktatás ügyhöz + Ügyek audit/lezárás
+
+```
+- Evidence: ügy dropdown + iktatás aktív ügyhöz + Ügy nyitása ebből (Cases autó-fókusz)
+- Evidence: automatikus visszalinkelés a Case-be (evidenceIds + timeline)
+- Ügyek: timeline/audit + Lezárás (lezárt -> read-only)
+```
+
