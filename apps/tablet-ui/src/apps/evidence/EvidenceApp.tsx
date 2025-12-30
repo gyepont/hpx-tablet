@@ -1,10 +1,23 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocalStorageState } from "../../core/ui/useLocalStorage";
+import { usePlayerContext } from "../../core/session/usePlayerContext";
 
-type EvidenceStatus = "OPEN" | "SEALED";
-type EvidenceType = "Tárgy" | "Fotó" | "Videó" | "DNS" | "Ujjlenyomat" | "Egyéb";
+type EvidenceStatus = "NYITOTT" | "SEALED";
 
-type EvidenceEventAction = "Létrehozva" | "Frissítve" | "Megjegyzés" | "Átadva" | "Lepecsételve";
+type EvidenceType =
+  | "Tárgy"
+  | "Fegyver"
+  | "DNS"
+  | "Ujjlenyomat"
+  | "Fotó"
+  | "Videó"
+  | "Egyéb";
+
+type EvidenceEventAction =
+  | "Létrehozva"
+  | "Mentve"
+  | "Átadva"
+  | "Lepecsételve"
+  | "Ügy linkelve";
 
 type EvidenceEvent = {
   id: string;
@@ -17,16 +30,16 @@ type EvidenceEvent = {
 
 type EvidenceItem = {
   id: string;
+  label: string;
   type: EvidenceType;
   status: EvidenceStatus;
 
-  title: string;
+  holder: string; // aktuális birtokos (chain-of-custody)
   note: string;
-
   tags: string[];
-  reportIds: string[];
 
-  holderLabel: string;
+  reportId?: string | null;
+  caseId?: string | null;
 
   createdAt: string;
   updatedAt: string;
@@ -34,27 +47,35 @@ type EvidenceItem = {
   events: EvidenceEvent[];
 };
 
-const EVIDENCE_KEY = "hpx:evidence:v1";
-const LAST_REPORT_KEY = "hpx:evidence:lastReportId:v1";
+type CaseLite = {
+  id: string;
+  caseNumber?: string | null;
+  title?: string | null;
+  linkedEvidenceIds?: string[];
+  timeline?: Array<{ id: string; ts: string; action: "Létrehozva" | "Mentve" | "Lezárva" | "Újranyitva" | "Linkelve"; by: string; note?: string | null }>;
+  updatedAt?: string;
+};
 
-function nowIso() {
+const EVIDENCE_KEY = "hpx:evidence:v1";
+const CASES_KEY = "hpx:cases:v1";
+const LAST_REPORT_KEY = "hpx:evidence:lastReportId:v1";
+const OPEN_CASE_KEY = "hpx:cases:openCaseId:v1";
+
+const OPEN_EVIDENCE_KEY = "hpx:evidence:openEvidenceId:v1";
+
+function nowIso(): string {
   return new Date().toISOString();
 }
 
-function makeId(prefix = "EV") {
-  const d = new Date();
-  const y = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const rnd = Math.floor(100000 + Math.random() * 900000);
-  return `${prefix}-${y}${mm}${dd}-${rnd}`;
+function makeId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function toast(title: string, message: string, level: "info" | "success" | "warning" | "error" = "info") {
+function notify(title: string, message: string, level: "info" | "success" | "warning" | "error" = "info") {
   window.postMessage({ type: "hpx:notify", title, message, level }, "*");
 }
 
-function safeParse<T>(raw: string | null, fallback: T): T {
+function safeParseJson<T>(raw: string | null, fallback: T): T {
   if (!raw) return fallback;
   try {
     return JSON.parse(raw) as T;
@@ -63,425 +84,533 @@ function safeParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
-function normalizeTagsInput(s: string): string[] {
-  return s
+function persistEvidence(items: EvidenceItem[]): void {
+  try {
+    localStorage.setItem(EVIDENCE_KEY, JSON.stringify(items));
+  } catch {
+    // no-op
+  }
+}
+
+function loadEvidence(): EvidenceItem[] {
+  const arr = safeParseJson<EvidenceItem[]>(localStorage.getItem(EVIDENCE_KEY), []);
+  return (arr ?? [])
+    .filter((x) => x && typeof x.id === "string")
+    .map((x) => ({
+      id: x.id,
+      label: typeof x.label === "string" ? x.label : "Bizonyíték",
+      type: (x.type as EvidenceType) ?? "Egyéb",
+      status: (x.status as EvidenceStatus) ?? "NYITOTT",
+      holder: typeof x.holder === "string" ? x.holder : "—",
+      note: typeof x.note === "string" ? x.note : "",
+      tags: Array.isArray(x.tags) ? x.tags.filter((t) => typeof t === "string") : [],
+      reportId: x.reportId ?? null,
+      caseId: x.caseId ?? null,
+      createdAt: typeof x.createdAt === "string" ? x.createdAt : nowIso(),
+      updatedAt: typeof x.updatedAt === "string" ? x.updatedAt : nowIso(),
+      events: Array.isArray(x.events) ? (x.events.filter(Boolean) as EvidenceEvent[]) : [],
+    }))
+    .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+}
+
+function loadCasesLite(): CaseLite[] {
+  const arr = safeParseJson<CaseLite[]>(localStorage.getItem(CASES_KEY), []);
+  return (arr ?? []).filter((x) => x && typeof x.id === "string");
+}
+
+function normalizeTags(raw: string): string[] {
+  const parts = raw
     .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .slice(0, 24);
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return Array.from(new Set(parts)).slice(0, 24);
 }
 
-function normalizeIdsInput(s: string): string[] {
-  return s
-    .split(",")
-    .map((x) => x.trim())
-    .filter(Boolean)
-    .slice(0, 64);
+function formatTs(ts: string): string {
+  return ts && ts.length >= 19 ? ts.slice(11, 19) : ts;
 }
 
-function normalizeStringArray(v: unknown): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.map((x) => String(x)).map((x) => x.trim()).filter(Boolean).slice(0, 200);
+function makeEvent(action: EvidenceEventAction, by: string, holder?: string | null, note?: string | null): EvidenceEvent {
+  return { id: makeId(), ts: nowIso(), action, by, holder: holder ?? null, note: note ?? null };
 }
 
-function normalizeType(v: unknown): EvidenceType {
-  const s = String(v ?? "");
-  if (s === "Tárgy" || s === "Fotó" || s === "Videó" || s === "DNS" || s === "Ujjlenyomat" || s === "Egyéb") return s;
-  return "Egyéb";
-}
-
-function normalizeStatus(v: unknown): EvidenceStatus {
-  return v === "SEALED" ? "SEALED" : "OPEN";
-}
-
-function normalizeEvents(v: unknown, createdAt: string): EvidenceEvent[] {
-  if (!Array.isArray(v) || v.length === 0) {
-    return [{ id: `${Date.now()}-${Math.random()}`, ts: createdAt, action: "Létrehozva", by: "UI", holder: "Raktár", note: null }];
-  }
-
-  const out: EvidenceEvent[] = [];
-  for (const it of v) {
-    const o = it as any;
-    const actionRaw = String(o?.action ?? "");
-    const action: EvidenceEventAction =
-      actionRaw === "Frissítve" ||
-      actionRaw === "Megjegyzés" ||
-      actionRaw === "Átadva" ||
-      actionRaw === "Lepecsételve"
-        ? (actionRaw as EvidenceEventAction)
-        : "Létrehozva";
-
-    out.push({
-      id: String(o?.id ?? `${Date.now()}-${Math.random()}`),
-      ts: String(o?.ts ?? createdAt),
-      action,
-      by: String(o?.by ?? "UI"),
-      holder: o?.holder == null ? null : String(o.holder),
-      note: o?.note == null ? null : String(o.note),
-    });
-  }
-  return out.slice(0, 120);
-}
-
-function normalizeEvidence(raw: unknown): EvidenceItem {
-  const o = raw as any;
-
-  const id = String(o?.id ?? makeId("EV"));
-  const createdAt = String(o?.createdAt ?? nowIso());
-  const updatedAt = String(o?.updatedAt ?? createdAt);
-
-  const type = normalizeType(o?.type);
-  const status = normalizeStatus(o?.status);
-
-  const title = String(o?.title ?? "Bizonyíték");
-  const note = String(o?.note ?? "");
-
-  const tags = Array.isArray(o?.tags) ? o.tags.map((x: any) => String(x)).filter(Boolean).slice(0, 24) : [];
-  const reportIds = normalizeStringArray(o?.reportIds);
-
-  const holderLabel = String(o?.holderLabel ?? "Raktár");
-
-  const events = normalizeEvents(o?.events, createdAt);
-
-  return {
-    id,
-    type,
-    status,
-    title,
-    note,
-    tags,
-    reportIds,
-    holderLabel,
-    createdAt,
-    updatedAt,
-    events,
-  };
-}
-
-/** Magyar komment: régi localStorage formátumok kimentése (pl. { items: [...] }) */
-function extractEvidenceList(raw: unknown): unknown[] {
-  if (Array.isArray(raw)) return raw;
-  if (raw && typeof raw === "object") {
-    const o = raw as any;
-    if (Array.isArray(o.items)) return o.items;
-    if (Array.isArray(o.evidences)) return o.evidences;
-    if (Array.isArray(o.data)) return o.data;
-  }
-  return [];
-}
-
-function joinChangeList(changes: string[]): string | null {
-  if (changes.length === 0) return null;
-  return `Változott: ${changes.join(", ")}`;
+function cloneEvidence(e: EvidenceItem): EvidenceItem {
+  return { ...e, tags: [...e.tags], events: [...e.events] };
 }
 
 export default function EvidenceApp() {
-  const [itemsRaw, setItemsRaw] = useLocalStorageState<unknown>(EVIDENCE_KEY, []);
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const { data: player } = usePlayerContext();
+  const actorName = player?.name ?? "—";
 
-  // Magyar komment: ha nem tömb a storage, migráljuk tömbbé (különben runtime crash)
-  useEffect(() => {
-    if (Array.isArray(itemsRaw)) return;
-    const list = extractEvidenceList(itemsRaw);
-    setItemsRaw(list);
-  }, [itemsRaw, setItemsRaw]);
+  const [items, setItems] = useState<EvidenceItem[]>(() => loadEvidence());
+  const [casesLite, setCasesLite] = useState<CaseLite[]>(() => loadCasesLite());
 
-  const items = useMemo(() => extractEvidenceList(itemsRaw).map((x) => normalizeEvidence(x)), [itemsRaw]);
-
-  const setItems = (updater: (prev: EvidenceItem[]) => EvidenceItem[]) => {
-    setItemsRaw((prevRaw: any) => {
-      const prev = extractEvidenceList(prevRaw).map((x) => normalizeEvidence(x));
-      const next = updater(prev);
-      return next;
-    });
-  };
-
-  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<EvidenceStatus | "ALL">("ALL");
   const [typeFilter, setTypeFilter] = useState<EvidenceType | "ALL">("ALL");
 
-  const selected = useMemo(() => items.find((x) => x.id === activeId) ?? null, [items, activeId]);
-  const isLocked = selected?.status === "SEALED";
+  const [selectedId, setSelectedId] = useState<string | null>(() => items[0]?.id ?? null);
+  const selectedSaved = useMemo(() => items.find((x) => x.id === selectedId) ?? null, [items, selectedId]);
 
-  // ===== Draft mezők (csak Mentés ír timeline-t) =====
-  const [draftTitle, setDraftTitle] = useState("");
-  const [draftNote, setDraftNote] = useState("");
-  const [draftTagsText, setDraftTagsText] = useState("");
-  const [draftReportIdsText, setDraftReportIdsText] = useState("");
-  const [draftType, setDraftType] = useState<EvidenceType>("Egyéb");
+  const [draft, setDraft] = useState<EvidenceItem | null>(() => (selectedSaved ? cloneEvidence(selectedSaved) : null));
+  const [dirty, setDirty] = useState<boolean>(false);
 
-  useEffect(() => {
-    if (!selected) {
-      setDraftTitle("");
-      setDraftNote("");
-      setDraftTagsText("");
-      setDraftReportIdsText("");
-      setDraftType("Egyéb");
-      return;
-    }
-
-    setDraftTitle(selected.title ?? "");
-    setDraftNote(selected.note ?? "");
-    setDraftTagsText((selected.tags ?? []).join(", "));
-    setDraftReportIdsText((selected.reportIds ?? []).join(", "));
-    setDraftType(selected.type ?? "Egyéb");
-  }, [selected?.id]);
-
-  const draftTags = useMemo(() => normalizeTagsInput(draftTagsText), [draftTagsText]);
-  const draftReportIds = useMemo(() => normalizeIdsInput(draftReportIdsText), [draftReportIdsText]);
-
-  const isDirty = useMemo(() => {
-    if (!selected) return false;
-    if (draftTitle !== (selected.title ?? "")) return true;
-    if (draftNote !== (selected.note ?? "")) return true;
-    if (draftType !== (selected.type ?? "Egyéb")) return true;
-    if (JSON.stringify(draftTags) !== JSON.stringify(selected.tags ?? [])) return true;
-    if (JSON.stringify(draftReportIds) !== JSON.stringify(selected.reportIds ?? [])) return true;
-    return false;
-  }, [selected, draftTitle, draftNote, draftType, draftTags, draftReportIds]);
+  const [createOpen, setCreateOpen] = useState<boolean>(false);
+  const [newLabel, setNewLabel] = useState<string>("");
+  const [newType, setNewType] = useState<EvidenceType>("Egyéb");
+  const [newHolder, setNewHolder] = useState<string>("Bizonyíték raktár");
+  const [newTagsRaw, setNewTagsRaw] = useState<string>("");
+  const [newReportId, setNewReportId] = useState<string>("");
+  const [newCaseId, setNewCaseId] = useState<string>("");
 
   const lastReportId = useMemo(() => {
     try {
       const raw = localStorage.getItem(LAST_REPORT_KEY);
-      const v = safeParse<string | null>(raw, null);
-      return v ? String(v) : null;
+      return raw ? String(JSON.parse(raw)) : null;
     } catch {
       return null;
     }
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return items
-      .filter((x) => (statusFilter === "ALL" ? true : x.status === statusFilter))
-      .filter((x) => (typeFilter === "ALL" ? true : x.type === typeFilter))
-      .filter((x) => {
-        if (!q) return true;
-        return (
-          x.id.toLowerCase().includes(q) ||
-          x.title.toLowerCase().includes(q) ||
-          x.tags.join(",").toLowerCase().includes(q) ||
-          x.reportIds.join(",").toLowerCase().includes(q)
-        );
-      })
-      .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
-  }, [items, query, statusFilter, typeFilter]);
+  useEffect(() => {
+    if (dirty) return;
+    setDraft(selectedSaved ? cloneEvidence(selectedSaved) : null);
+  }, [selectedSaved, dirty]);
 
   useEffect(() => {
-    if (!activeId && items.length) setActiveId(items[0].id);
-    if (activeId && !items.some((x) => x.id === activeId)) setActiveId(items.length ? items[0].id : null);
-  }, [items, activeId]);
+    if (selectedId && items.some((x) => x.id === selectedId)) return;
+    setSelectedId(items[0]?.id ?? null);
+  }, [items, selectedId]);
 
-  function updateEvidence(
-    id: string,
-    patch: Partial<EvidenceItem>,
-    event?: { action: EvidenceEventAction; note?: string | null; holder?: string | null }
-  ) {
-    setItems((prev) =>
-      prev.map((it) => {
-        if (it.id !== id) return it;
+  useEffect(() => {
+    // Magyar komment: Evidence deep-link (későbbi “Ügyből megnyitás” előkészítés)
+    try {
+      const raw = localStorage.getItem(OPEN_EVIDENCE_KEY);
+      if (!raw) return;
+      localStorage.removeItem(OPEN_EVIDENCE_KEY);
+      const id = String(JSON.parse(raw) ?? "");
+      if (!id) return;
+      if (items.some((x) => x.id === id)) setSelectedId(id);
+      else setSearch(id);
+    } catch {
+      // no-op
+    }
+  }, [items]);
 
-        const base = normalizeEvidence(it);
-        const newEvents = event
-          ? [
-              {
-                id: `${Date.now()}-${Math.random()}`,
-                ts: nowIso(),
-                action: event.action,
-                by: "UI",
-                holder: event.holder ?? base.holderLabel ?? null,
-                note: event.note ?? null,
-              },
-              ...(base.events ?? []),
-            ].slice(0, 120)
-          : (base.events ?? []);
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return items.filter((e) => {
+      if (statusFilter !== "ALL" && e.status !== statusFilter) return false;
+      if (typeFilter !== "ALL" && e.type !== typeFilter) return false;
 
-        return {
-          ...base,
-          ...patch,
-          updatedAt: nowIso(),
-          events: newEvents,
-        };
-      })
-    );
+      if (!q) return true;
+
+      const hay = [
+        e.id,
+        e.label,
+        e.type,
+        e.status,
+        e.holder,
+        e.note,
+        e.tags.join(" "),
+        e.reportId ?? "",
+        e.caseId ?? "",
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return hay.includes(q);
+    });
+  }, [items, search, statusFilter, typeFilter]);
+
+  const caseMap = useMemo(() => {
+    const m = new Map<string, CaseLite>();
+    for (const c of casesLite) m.set(c.id, c);
+    return m;
+  }, [casesLite]);
+
+  function refreshCasesLite(): void {
+    setCasesLite(loadCasesLite());
+    notify("Bizonyítékok", "Ügy lista frissítve.", "info");
   }
 
-  function createNew() {
-    const id = makeId("EV");
-    const createdAt = nowIso();
+  function markDirty(): void {
+    setDirty(true);
+  }
 
-    const item: EvidenceItem = {
-      id,
-      type: "Egyéb",
-      status: "OPEN",
-      title: "Bizonyíték",
-      note: "",
-      tags: [],
-      reportIds: [],
-      holderLabel: "Raktár",
-      createdAt,
-      updatedAt: createdAt,
-      events: [{ id: `${Date.now()}-${Math.random()}`, ts: createdAt, action: "Létrehozva", by: "UI", holder: "Raktár", note: null }],
+  function updateDraft(patch: Partial<EvidenceItem>): void {
+    if (!draft) return;
+    setDraft({ ...draft, ...patch });
+    markDirty();
+  }
+
+  function discardDraft(): void {
+    if (!selectedSaved) return;
+    setDraft(cloneEvidence(selectedSaved));
+    setDirty(false);
+    notify("Bizonyítékok", "Változások elvetve.", "info");
+  }
+
+  function saveDraft(): void {
+    if (!draft || !selectedSaved) return;
+
+    const ts = nowIso();
+    const next: EvidenceItem = {
+      ...draft,
+      updatedAt: ts,
+      events: [...draft.events],
     };
 
-    setItems((prev) => [item, ...prev]);
-    setActiveId(id);
-    toast("Bizonyítékok", `Létrehozva: ${id}`, "success");
+    // Magyar komment: csak mentésnél írunk audit sort (nem gépelésnél!)
+    next.events = [makeEvent("Mentve", actorName, next.holder, "Módosítások mentve"), ...next.events].slice(0, 80);
+
+    setItems((prev) => {
+      const updated = prev
+        .map((x) => (x.id === next.id ? next : x))
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      persistEvidence(updated);
+      return updated;
+    });
+
+    setDraft(cloneEvidence(next));
+    setDirty(false);
+    notify("Bizonyítékok", "Mentve.", "success");
   }
 
-  function saveNow() {
-    if (!selected) return;
-    if (isLocked) return;
+  function sealEvidence(): void {
+    if (!draft || !selectedSaved) return;
+    if (draft.status === "SEALED") return;
 
-    const changes: string[] = [];
-    if (draftTitle !== (selected.title ?? "")) changes.push("cím");
-    if (draftNote !== (selected.note ?? "")) changes.push("jegyzet");
-    if (draftType !== (selected.type ?? "Egyéb")) changes.push("típus");
-    if (JSON.stringify(draftTags) !== JSON.stringify(selected.tags ?? [])) changes.push("tagek");
-    if (JSON.stringify(draftReportIds) !== JSON.stringify(selected.reportIds ?? [])) changes.push("report linkek");
+    const ts = nowIso();
+    const next: EvidenceItem = {
+      ...draft,
+      status: "SEALED",
+      updatedAt: ts,
+      events: [makeEvent("Lepecsételve", actorName, draft.holder, null), ...draft.events].slice(0, 80),
+    };
 
-    updateEvidence(
-      selected.id,
-      { title: draftTitle, note: draftNote, type: draftType, tags: draftTags, reportIds: draftReportIds },
-      { action: "Frissítve", note: joinChangeList(changes), holder: selected.holderLabel }
-    );
+    setItems((prev) => {
+      const updated = prev
+        .map((x) => (x.id === next.id ? next : x))
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      persistEvidence(updated);
+      return updated;
+    });
 
-    toast("Bizonyítékok", "Mentve.", "success");
+    setDraft(cloneEvidence(next));
+    setDirty(false);
+    notify("Bizonyítékok", "Bizonyíték lepecsételve (read-only).", "success");
   }
 
-  function addQuickLinkToLastReport() {
-    if (!lastReportId) return;
-    const list = normalizeIdsInput(draftReportIdsText);
-    if (list.includes(lastReportId)) return;
-    setDraftReportIdsText([lastReportId, ...list].join(", "));
+  function transferEvidence(): void {
+    if (!draft || !selectedSaved) return;
+    if (draft.status === "SEALED") {
+      notify("Bizonyítékok", "Lepecsételt bizonyíték nem adható át.", "warning");
+      return;
+    }
+
+    const newHolder = (prompt("Új birtokos (osztály/személy):", draft.holder) ?? "").trim();
+    if (!newHolder) return;
+
+    const note = (prompt("Megjegyzés (opcionális):", "") ?? "").trim();
+    const ts = nowIso();
+
+    const next: EvidenceItem = {
+      ...draft,
+      holder: newHolder,
+      updatedAt: ts,
+      events: [makeEvent("Átadva", actorName, newHolder, note || null), ...draft.events].slice(0, 80),
+    };
+
+    setItems((prev) => {
+      const updated = prev
+        .map((x) => (x.id === next.id ? next : x))
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      persistEvidence(updated);
+      return updated;
+    });
+
+    setDraft(cloneEvidence(next));
+    setDirty(false);
+    notify("Bizonyítékok", `Átadva: ${newHolder}`, "success");
   }
 
-  function addNoteEvent() {
-    if (!selected) return;
-    const txt = (prompt("Megjegyzés:", "") ?? "").trim();
-    if (!txt) return;
-    updateEvidence(selected.id, {}, { action: "Megjegyzés", note: txt, holder: selected.holderLabel });
-    toast("Bizonyítékok", "Megjegyzés rögzítve.", "success");
+  function linkToCase(caseId: string): void {
+    if (!draft || !selectedSaved) return;
+    if (!caseId) return;
+
+    const ts = nowIso();
+    const next: EvidenceItem = {
+      ...draft,
+      caseId,
+      updatedAt: ts,
+      events: [makeEvent("Ügy linkelve", actorName, draft.holder, `Ügy: ${caseId}`), ...draft.events].slice(0, 80),
+    };
+
+    // Magyar komment: Evidence mentése
+    setItems((prev) => {
+      const updated = prev
+        .map((x) => (x.id === next.id ? next : x))
+        .sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      persistEvidence(updated);
+      return updated;
+    });
+
+    // Magyar komment: Case automatikus frissítése (linkedEvidenceIds + timeline)
+    try {
+      const cases = safeParseJson<CaseLite[]>(localStorage.getItem(CASES_KEY), []);
+      const updatedCases = (cases ?? []).map((c) => {
+        if (c.id !== caseId) return c;
+
+        const current = Array.isArray(c.linkedEvidenceIds) ? c.linkedEvidenceIds : [];
+        const nextLinks = current.includes(next.id) ? current : [next.id, ...current].slice(0, 50);
+
+        const tl = Array.isArray(c.timeline) ? c.timeline : [];
+        const nextTl = [
+          { id: makeId(), ts, action: "Linkelve" as const, by: actorName, note: `Bizonyíték: ${next.id}` },
+          ...tl,
+        ].slice(0, 80);
+
+        return { ...c, linkedEvidenceIds: nextLinks, timeline: nextTl, updatedAt: ts };
+      });
+
+      localStorage.setItem(CASES_KEY, JSON.stringify(updatedCases));
+    } catch {
+      // no-op
+    }
+
+    setDraft(cloneEvidence(next));
+    setDirty(false);
+
+    notify("Bizonyítékok", "Ügyhöz linkelve + az Ügyben is rögzítve.", "success");
   }
 
-  function transfer() {
-    if (!selected) return;
-    if (selected.status === "SEALED") return;
-
-    const holder = (prompt("Kinek adod át? (pl. Labor / Nyomozó / Raktár)", selected.holderLabel) ?? "").trim();
-    if (!holder) return;
-
-    const note = (prompt("Átadás megjegyzés (opcionális):", "") ?? "").trim();
-
-    updateEvidence(selected.id, { holderLabel: holder }, { action: "Átadva", note: note || null, holder });
-    toast("Bizonyítékok", `Átadva: ${holder}`, "success");
+  function openCaseFromEvidence(): void {
+    if (!draft?.caseId) return;
+    try {
+      localStorage.setItem(OPEN_CASE_KEY, JSON.stringify(draft.caseId));
+    } catch {}
+    notify("Bizonyítékok", "Nyisd meg az Ügyek appot (automatikusan kiválasztja).", "info");
   }
 
-  function seal() {
-    if (!selected) return;
-    if (selected.status === "SEALED") return;
+  function createEvidence(): void {
+    const label = (newLabel || "Új bizonyíték").trim();
+    const holder = (newHolder || "Bizonyíték raktár").trim() || "—";
+    const tags = normalizeTags(newTagsRaw);
 
-    if (isDirty) saveNow();
-    updateEvidence(selected.id, { status: "SEALED" }, { action: "Lepecsételve", note: null, holder: selected.holderLabel });
-    toast("Bizonyítékok", "Lepecsételve (read-only).", "success");
+    const ts = nowIso();
+
+    const created: EvidenceItem = {
+      id: makeId(),
+      label,
+      type: newType,
+      status: "NYITOTT",
+      holder,
+      note: "",
+      tags,
+      reportId: (newReportId || "").trim() || null,
+      caseId: (newCaseId || "").trim() || null,
+      createdAt: ts,
+      updatedAt: ts,
+      events: [makeEvent("Létrehozva", actorName, holder, null)],
+    };
+
+    setItems((prev) => {
+      const next = [created, ...prev].sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : -1));
+      persistEvidence(next);
+      return next;
+    });
+
+    setSelectedId(created.id);
+    setDraft(cloneEvidence(created));
+    setDirty(false);
+
+    setCreateOpen(false);
+    setNewLabel("");
+    setNewType("Egyéb");
+    setNewHolder("Bizonyíték raktár");
+    setNewTagsRaw("");
+    setNewReportId("");
+    setNewCaseId("");
+
+    notify("Bizonyítékok", "Bizonyíték létrehozva.", "success");
+  }
+
+  const locked = draft?.status === "SEALED";
+
+  function caseLabel(caseId: string | null | undefined): string {
+    if (!caseId) return "—";
+    const c = caseMap.get(caseId);
+    if (!c) return caseId;
+    const n = (c.caseNumber ?? "").trim();
+    const t = (c.title ?? "").trim();
+    return `${n ? n + " • " : ""}${t || "Ügy"} (${c.id})`;
+  }
+
+  function safeSelect(id: string): void {
+    if (dirty) {
+      notify("Bizonyítékok", "Van nem mentett módosítás. Előbb Mentés / Elvetés.", "warning");
+      return;
+    }
+    setSelectedId(id);
   }
 
   return (
-    <div style={{ padding: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <div>
-          <div style={{ fontWeight: 900, fontSize: 16 }}>Bizonyítékok</div>
-          <div style={{ opacity: 0.7, fontSize: 12 }}>
-            Utolsó megnyitott jelentés: <b>{lastReportId ?? "—"}</b>
-          </div>
-        </div>
+    <div>
+      <div style={{ fontWeight: 900, fontSize: 16, marginBottom: 10 }}>Bizonyítékok</div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <button className="hpx-btn hpx-btnAccent" onClick={createNew}>Új bizonyíték</button>
-        </div>
-      </div>
-
-      <div style={{ display: "grid", gridTemplateColumns: "420px 1fr", gap: 12, marginTop: 12 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "0.9fr 1.1fr", gap: 12 }}>
         <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.16)", padding: 12 }}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+            <div>
+              <div style={{ fontWeight: 900 }}>Lista</div>
+              <div style={{ opacity: 0.7, fontSize: 12 }}>Összes: {items.length} • Szűrt: {filtered.length}</div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button className="hpx-btn" onClick={refreshCasesLite}>Ügy lista frissítés</button>
+              <button className="hpx-btn hpx-btnAccent" onClick={() => setCreateOpen((v) => !v)}>
+                {createOpen ? "Új: bezár" : "Új bizonyíték"}
+              </button>
+            </div>
+          </div>
+
+          {createOpen && (
+            <div style={{ marginTop: 12, border: "1px solid rgba(255,216,76,0.20)", padding: 12 }}>
+              <div style={{ fontWeight: 900, marginBottom: 10 }}>Új bizonyíték</div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <input
+                  value={newLabel}
+                  onChange={(e) => setNewLabel(e.target.value)}
+                  placeholder="Megnevezés…"
+                  style={{ width: "min(320px, 100%)", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
+                />
+
+                <select
+                  value={newType}
+                  onChange={(e) => setNewType(e.target.value as EvidenceType)}
+                  style={{ padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
+                >
+                  {(["Tárgy","Fegyver","DNS","Ujjlenyomat","Fotó","Videó","Egyéb"] as EvidenceType[]).map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+
+                <input
+                  value={newHolder}
+                  onChange={(e) => setNewHolder(e.target.value)}
+                  placeholder="Birtokos…"
+                  style={{ width: "min(260px, 100%)", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
+                />
+              </div>
+
+              <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Tagek (vesszővel)</div>
+              <input
+                value={newTagsRaw}
+                onChange={(e) => setNewTagsRaw(e.target.value)}
+                placeholder="pl.: kamera, vágásnyom, lőszer…"
+                style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
+              />
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+                <div>
+                  <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Kapcsolt jelentés (Report ID)</div>
+                  <input
+                    value={newReportId}
+                    onChange={(e) => setNewReportId(e.target.value)}
+                    placeholder="pl.: rep_xxx"
+                    style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
+                  />
+                  {lastReportId && (
+                    <div style={{ marginTop: 6, opacity: 0.75, fontSize: 12 }}>
+                      Legutóbbi jelentés: <b>{lastReportId}</b>{" "}
+                      <button className="hpx-btn" onClick={() => setNewReportId(String(lastReportId))}>
+                        Kitölt
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Ügy hozzárendelés (opcionális)</div>
+                  <select
+                    value={newCaseId}
+                    onChange={(e) => setNewCaseId(e.target.value)}
+                    style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
+                  >
+                    <option value="">— (nincs)</option>
+                    {casesLite.slice(0, 200).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {(c.caseNumber ? `${c.caseNumber} • ` : "") + (c.title ?? "Ügy") + ` (${c.id})`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
+                <button className="hpx-btn hpx-btnAccent" onClick={createEvidence}>Létrehozás</button>
+                <button className="hpx-btn" onClick={() => setCreateOpen(false)}>Mégse</button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12 }}>
             <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Keresés (ID/cím/tag/report)…"
-              style={{
-                width: "min(360px, 100%)",
-                padding: "10px 10px",
-                borderRadius: 0,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.18)",
-                color: "rgba(255,255,255,0.92)",
-                outline: "none",
-              }}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Keresés…"
+              style={{ width: "min(320px, 100%)", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
             />
 
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              style={{
-                padding: "10px 10px",
-                borderRadius: 0,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.18)",
-                color: "rgba(255,255,255,0.92)",
-                outline: "none",
-              }}
+              onChange={(e) => setStatusFilter(e.target.value as EvidenceStatus | "ALL")}
+              style={{ padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
             >
-              <option value="ALL">Minden</option>
-              <option value="OPEN">Nyitott</option>
-              <option value="SEALED">Lepecsételt</option>
+              <option value="ALL">Minden státusz</option>
+              <option value="NYITOTT">NYITOTT</option>
+              <option value="SEALED">SEALED</option>
             </select>
 
             <select
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value as any)}
-              style={{
-                padding: "10px 10px",
-                borderRadius: 0,
-                border: "1px solid rgba(255,255,255,0.12)",
-                background: "rgba(0,0,0,0.18)",
-                color: "rgba(255,255,255,0.92)",
-                outline: "none",
-              }}
+              onChange={(e) => setTypeFilter(e.target.value as EvidenceType | "ALL")}
+              style={{ padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none" }}
             >
               <option value="ALL">Minden típus</option>
-              <option value="Tárgy">Tárgy</option>
-              <option value="Fotó">Fotó</option>
-              <option value="Videó">Videó</option>
-              <option value="DNS">DNS</option>
-              <option value="Ujjlenyomat">Ujjlenyomat</option>
-              <option value="Egyéb">Egyéb</option>
+              {(["Tárgy","Fegyver","DNS","Ujjlenyomat","Fotó","Videó","Egyéb"] as EvidenceType[]).map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
             </select>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
             {filtered.length === 0 ? (
-              <div style={{ opacity: 0.7 }}>Nincs bizonyíték.</div>
+              <div style={{ opacity: 0.7 }}>Nincs találat.</div>
             ) : (
               filtered.map((e) => (
                 <div
                   key={e.id}
-                  onClick={() => setActiveId(e.id)}
+                  onClick={() => safeSelect(e.id)}
                   style={{
-                    border: "1px solid rgba(255,255,255,0.10)",
+                    border: `1px solid ${e.status === "SEALED" ? "rgba(47,232,110,0.20)" : "rgba(255,255,255,0.10)"}`,
                     padding: 10,
                     cursor: "pointer",
-                    boxShadow: e.id === activeId ? "0 0 0 3px rgba(255,216,76,0.10)" : "none",
+                    background: e.id === selectedId ? "rgba(255,216,76,0.06)" : "rgba(0,0,0,0.10)",
+                    boxShadow: e.id === selectedId ? "0 0 0 3px rgba(255,216,76,0.10)" : "none",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 900 }}>{e.title}</div>
-                    <div style={{ opacity: 0.75, fontSize: 12 }}>{e.status}</div>
+                    <div style={{ fontWeight: 900 }}>{e.label}</div>
+                    <div style={{ opacity: 0.7, fontSize: 12 }}>{formatTs(e.updatedAt)}</div>
                   </div>
                   <div style={{ opacity: 0.75, fontSize: 12, marginTop: 6 }}>
-                    <b>{e.id}</b> • {e.type} • {e.holderLabel}
+                    {e.type} • {e.status} • Birtokos: <b>{e.holder}</b>
                   </div>
-                  <div style={{ opacity: 0.65, fontSize: 12, marginTop: 6 }}>
-                    Report link: {e.reportIds.length} • Tagek: {e.tags.length}
+                  <div style={{ opacity: 0.7, fontSize: 12, marginTop: 4 }}>
+                    Ügy: {e.caseId ? "✅" : "—"} • Jelentés: {e.reportId ? "✅" : "—"} • Tagek: {e.tags.join(", ") || "—"}
                   </div>
                 </div>
               ))
@@ -490,159 +619,158 @@ export default function EvidenceApp() {
         </div>
 
         <div style={{ border: "1px solid rgba(255,255,255,0.10)", background: "rgba(0,0,0,0.16)", padding: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          {!draft ? (
+            <div style={{ opacity: 0.7 }}>Válassz egy bizonyítékot.</div>
+          ) : (
             <div>
-              <div style={{ fontWeight: 900, fontSize: 16 }}>Részletek</div>
-              <div style={{ opacity: 0.7, fontSize: 12 }}>Kijelölt: <b>{selected?.id ?? "—"}</b></div>
-            </div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontWeight: 900, fontSize: 16 }}>{draft.label}</div>
+                  <div style={{ opacity: 0.7, fontSize: 12 }}>
+                    ID: {draft.id} • {dirty ? "⚠️ Nem mentett változás" : "✅ Mentve"} • {draft.status}
+                  </div>
+                </div>
 
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-              {selected && !isLocked && (
-                <div style={{ opacity: 0.75, fontSize: 12 }}>
-                  {isDirty ? "Van nem mentett módosítás." : "Minden mentve."}
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button className="hpx-btn hpx-btnAccent" onClick={saveDraft} disabled={!dirty || locked}>Mentés</button>
+                  <button className="hpx-btn" onClick={discardDraft} disabled={!dirty}>Elvetés</button>
+                  <button className="hpx-btn" onClick={transferEvidence} disabled={locked}>Átadás</button>
+                  <button className="hpx-btn" onClick={sealEvidence} disabled={locked}>Lepecsételés</button>
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Típus</div>
+                  <select
+                    value={draft.type}
+                    onChange={(e) => updateDraft({ type: e.target.value as EvidenceType })}
+                    disabled={locked}
+                    style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                  >
+                    {(["Tárgy","Fegyver","DNS","Ujjlenyomat","Fotó","Videó","Egyéb"] as EvidenceType[]).map((t) => (
+                      <option key={t} value={t}>{t}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Birtokos</div>
+                  <input
+                    value={draft.holder}
+                    onChange={(e) => updateDraft({ holder: e.target.value })}
+                    disabled={locked}
+                    style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Megnevezés</div>
+                <input
+                  value={draft.label}
+                  onChange={(e) => updateDraft({ label: e.target.value })}
+                  disabled={locked}
+                  style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                />
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Jegyzet</div>
+                <textarea
+                  value={draft.note}
+                  onChange={(e) => updateDraft({ note: e.target.value })}
+                  disabled={locked}
+                  placeholder="Rövid jegyzet…"
+                  style={{ width: "100%", minHeight: 90, padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                />
+              </div>
+
+              <div style={{ marginTop: 12 }}>
+                <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Tagek (vesszővel)</div>
+                <input
+                  value={draft.tags.join(", ")}
+                  onChange={(e) => updateDraft({ tags: normalizeTags(e.target.value) })}
+                  disabled={locked}
+                  style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+                <div>
+                  <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Kapcsolt jelentés (Report ID)</div>
+                  <input
+                    value={draft.reportId ?? ""}
+                    onChange={(e) => updateDraft({ reportId: e.target.value })}
+                    disabled={locked}
+                    style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                  />
+                </div>
+
+                <div>
+                  <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Ügy hozzárendelés</div>
+                  <select
+                    value={draft.caseId ?? ""}
+                    onChange={(e) => updateDraft({ caseId: e.target.value || null })}
+                    disabled={locked}
+                    style={{ width: "100%", padding: "10px 10px", borderRadius: 0, border: "1px solid rgba(255,255,255,0.12)", background: "rgba(0,0,0,0.18)", color: "rgba(255,255,255,0.92)", outline: "none", opacity: locked ? 0.7 : 1 }}
+                  >
+                    <option value="">— (nincs)</option>
+                    {casesLite.slice(0, 200).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {(c.caseNumber ? `${c.caseNumber} • ` : "") + (c.title ?? "Ügy") + ` (${c.id})`}
+                      </option>
+                    ))}
+                  </select>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                    <button
+                      className="hpx-btn hpx-btnAccent"
+                      onClick={() => draft.caseId ? linkToCase(draft.caseId) : notify("Bizonyítékok", "Válassz ügyet.", "warning")}
+                      disabled={locked || !draft.caseId}
+                      style={{ opacity: locked ? 0.7 : 1 }}
+                    >
+                      Link ügyhöz
+                    </button>
+
+                    <button className="hpx-btn" onClick={openCaseFromEvidence} disabled={!draft.caseId}>
+                      Ügy nyitása ebből
+                    </button>
+
+                    <div style={{ opacity: 0.75, fontSize: 12, alignSelf: "center" }}>
+                      {draft.caseId ? caseLabel(draft.caseId) : "—"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ fontWeight: 900, marginTop: 14, marginBottom: 6 }}>Chain-of-custody / Timeline</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {draft.events.slice(0, 60).map((e) => (
+                  <div key={e.id} style={{ border: "1px solid rgba(255,255,255,0.10)", padding: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                      <div style={{ fontWeight: 900 }}>{e.action}</div>
+                      <div style={{ opacity: 0.7, fontSize: 12 }}>{formatTs(e.ts)}</div>
+                    </div>
+                    <div style={{ opacity: 0.75, fontSize: 12 }}>
+                      {e.by} {e.holder ? `• ${e.holder}` : ""} {e.note ? `• ${e.note}` : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {locked && (
+                <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
+                  Lepecsételt bizonyíték: szerkesztés tiltva (betekintő marad).
                 </div>
               )}
 
-              <button className="hpx-btn" onClick={saveNow} disabled={!selected || isLocked || !isDirty}>Mentés</button>
-              <button className="hpx-btn" onClick={addNoteEvent} disabled={!selected}>Megjegyzés</button>
-              <button className="hpx-btn" onClick={transfer} disabled={!selected || isLocked}>Átadás</button>
-              <button className="hpx-btn hpx-btnAccent" onClick={seal} disabled={!selected || isLocked}>Lepecsétel</button>
-            </div>
-          </div>
-
-          {!selected ? (
-            <div style={{ opacity: 0.75, marginTop: 12 }}>Válassz egy bizonyítékot bal oldalt.</div>
-          ) : (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <select
-                  value={draftType}
-                  onChange={(e) => setDraftType(e.target.value as EvidenceType)}
-                  disabled={isLocked}
-                  style={{
-                    padding: "10px 10px",
-                    borderRadius: 0,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(0,0,0,0.18)",
-                    color: "rgba(255,255,255,0.92)",
-                    outline: "none",
-                  }}
-                >
-                  <option value="Tárgy">Tárgy</option>
-                  <option value="Fotó">Fotó</option>
-                  <option value="Videó">Videó</option>
-                  <option value="DNS">DNS</option>
-                  <option value="Ujjlenyomat">Ujjlenyomat</option>
-                  <option value="Egyéb">Egyéb</option>
-                </select>
-
-                <input
-                  value={draftTitle}
-                  onChange={(e) => setDraftTitle(e.target.value)}
-                  disabled={isLocked}
-                  style={{
-                    width: "min(520px, 100%)",
-                    padding: "10px 10px",
-                    borderRadius: 0,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(0,0,0,0.18)",
-                    color: "rgba(255,255,255,0.92)",
-                    outline: "none",
-                    fontWeight: 900,
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Jegyzet</div>
-                <textarea
-                  value={draftNote}
-                  onChange={(e) => setDraftNote(e.target.value)}
-                  disabled={isLocked}
-                  style={{
-                    width: "100%",
-                    minHeight: 90,
-                    padding: "10px 10px",
-                    borderRadius: 0,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(0,0,0,0.18)",
-                    color: "rgba(255,255,255,0.92)",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                <div style={{ opacity: 0.7, fontSize: 12, marginBottom: 6 }}>Tagek (vesszővel)</div>
-                <input
-                  value={draftTagsText}
-                  onChange={(e) => setDraftTagsText(e.target.value)}
-                  disabled={isLocked}
-                  style={{
-                    width: "100%",
-                    padding: "10px 10px",
-                    borderRadius: 0,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(0,0,0,0.18)",
-                    color: "rgba(255,255,255,0.92)",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ opacity: 0.7, fontSize: 12 }}>Kapcsolt jelentések (ID-k, vesszővel)</div>
-                  <button className="hpx-btn" onClick={addQuickLinkToLastReport} disabled={!lastReportId || isLocked}>
-                    + Utolsó jelentés
-                  </button>
-                </div>
-
-                <input
-                  value={draftReportIdsText}
-                  onChange={(e) => setDraftReportIdsText(e.target.value)}
-                  disabled={isLocked}
-                  style={{
-                    width: "100%",
-                    padding: "10px 10px",
-                    borderRadius: 0,
-                    border: "1px solid rgba(255,255,255,0.12)",
-                    background: "rgba(0,0,0,0.18)",
-                    color: "rgba(255,255,255,0.92)",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontWeight: 900, marginBottom: 6 }}>Chain-of-custody / Timeline</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {selected.events.slice(0, 80).map((e) => (
-                    <div key={e.id} style={{ border: "1px solid rgba(255,255,255,0.10)", padding: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                        <div style={{ fontWeight: 900 }}>{e.action}</div>
-                        <div style={{ opacity: 0.7, fontSize: 12 }}>{e.ts}</div>
-                      </div>
-                      <div style={{ opacity: 0.75, fontSize: 12 }}>
-                        {e.by} {e.holder ? `• ${e.holder}` : ""} {e.note ? `• ${e.note}` : ""}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                {isLocked && (
-                  <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12 }}>
-                    Lepecsételt bizonyíték: szerkesztés tiltva.
-                  </div>
-                )}
+              <div style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
+                Tipp: audit csak Mentés / Átadás / Lepecsételés / Ügy link műveletnél íródik (nem gépelésre).
               </div>
             </div>
           )}
         </div>
-      </div>
-
-      <div style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
-        Tipp: az MDT-ben egy jelentés megnyitása beállítja az “Utolsó megnyitott jelentés” kontextust itt.
       </div>
     </div>
   );

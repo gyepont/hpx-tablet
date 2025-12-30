@@ -45,6 +45,8 @@ const STORAGE_KEY = "hpx:cases:v1";
 const LAST_REPORT_KEY = "hpx:evidence:lastReportId:v1";
 const OPEN_EVIDENCE_KEY = "hpx:evidence:openEvidenceId:v1";
 const OPEN_REPORT_KEY = "hpx:mdt:openReportId:v1";
+const OPEN_CASE_KEY = "hpx:cases:openCaseId:v1";
+
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -200,6 +202,29 @@ export default function CasesApp() {
     if (dirty) return;
     setDraft(selectedSaved ? cloneCase(selectedSaved) : null);
   }, [selectedSaved, dirty]);
+  useEffect(() => {
+    if (dirty) return;
+
+    try {
+      const raw = localStorage.getItem(OPEN_CASE_KEY);
+      if (!raw) return;
+
+      localStorage.removeItem(OPEN_CASE_KEY);
+
+      const id = String(JSON.parse(raw) ?? "").trim();
+      if (!id) return;
+
+      if (items.some((x) => x.id === id)) {
+        setSelectedId(id);
+      } else {
+        // Magyar komment: ha nincs ilyen ID, akkor legalább keressen rá
+        setSearch(id);
+      }
+    } catch {
+      // no-op
+    }
+  }, [items, dirty]);
+
 
   useEffect(() => {
     if (selectedId && items.some((x) => x.id === selectedId)) return;
