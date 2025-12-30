@@ -109,3 +109,13 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - “+ MDT report” gomb: hozzáadja a kontextus report ID-t a kiválasztott bizonyítékhoz.
 ```
 
+
+## 2025-12-30 03:48:23 — MDT: report → linked evidence panel
+
+```
+- MDT Report szerkesztő: új “Kapcsolt bizonyítékok” panel.
+- Linkelés Evidence ID alapján (localStorage: hpx:evidence:v1).
+- Link törlés (csak ha nem SEALED).
+- Lista a reporthoz linkelt bizonyítékokról + ID másolás.
+```
+

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getRpcTransportKind, rpcCall } from "../../core/rpc/client";
 import { usePlayerContext } from "../../core/session/usePlayerContext";
 import ReportEditor from "./ReportEditor";
+import LinkedEvidencePanel from "./components/LinkedEvidencePanel";
 
 import type {
   MdtBolo,
@@ -896,7 +897,12 @@ export default function MdtApp() {
                     )}
                   </div>
 
-                  <ReportEditor valueHtml={reportDetail.fullText} onChangeHtml={(html) => setReportDetail({ ...reportDetail, fullText: html })} disabled={isReportLocked || reportSaving} />
+                  
+                  <LinkedEvidencePanel
+                    reportId={reportDetail.id}
+                    disabled={reportSaving}
+                  />
+<ReportEditor valueHtml={reportDetail.fullText} onChangeHtml={(html) => setReportDetail({ ...reportDetail, fullText: html })} disabled={isReportLocked || reportSaving} />
 
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
                     <button className="hpx-btn" onClick={() => setReportDetail(null)} disabled={reportSaving}>Bezárás</button>
