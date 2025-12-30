@@ -99,3 +99,13 @@ IDE JÖN AZ ÉN ÖSSZEFOGLALÓM + A CAT BLOKKOK / LÉPÉSEK
 - EvidenceApp: új bizonyíték alapból felveszi a lastReportId-t linkedReportId-ként (ha a kódban üres string volt).
 ```
 
+
+## 2025-12-30 03:35:22 — Evidence: MDT lastReportId context + auto-link
+
+```
+- EvidenceApp: beolvassa a hpx:evidence:lastReportId:v1 kulcsot.
+- “Kapcsolt jelentés (MDT)” sáv: kézzel írható + “Frissítés MDT-ből”.
+- Új bizonyíték alapból linkeli a report ID-t (ha van).
+- “+ MDT report” gomb: hozzáadja a kontextus report ID-t a kiválasztott bizonyítékhoz.
+```
+
