@@ -4,6 +4,7 @@ import type { Role } from "./session/types";
 export type TabletAppId =
   | "profile"
   | "mdt"
+  | "cases"
   | "evidence"
   | "bank"
   | "business"
@@ -22,11 +23,12 @@ export type TabletAppManifest = {
 };
 
 export const APPS: TabletAppManifest[] = [
-  { id: "profile",  title: "Profil",        icon: <span>👤</span>, dockDefault: true,  load: () => import("../apps/profile/ProfileApp") },
-  { id: "mdt",      title: "MDT",           icon: <span>🛡️</span>, dockDefault: true,  requiredRoles: ["police", "admin"], load: () => import("../apps/mdt/MdtApp") },
-  { id: "evidence", title: "Bizonyítékok",  icon: <span>🧾</span>, dockDefault: true,  requiredRoles: ["police", "ems", "admin"], load: () => import("../apps/evidence/EvidenceApp") },
-  { id: "bank",     title: "Bank",          icon: <span>🏦</span>, dockDefault: true,  load: () => import("../apps/bank/BankApp") },
-  { id: "business", title: "Vállalkozás",   icon: <span>🏢</span>, dockDefault: true,  load: () => import("../apps/business/BusinessApp") },
-  { id: "settings", title: "Beállítások",   icon: <span>⚙️</span>, dockDefault: true,  load: () => import("../apps/settings/SettingsApp") },
-  { id: "notes",    title: "Jegyzetek",     icon: <span>📝</span>, dockDefault: false, load: () => import("../apps/notes/NotesApp") }
+  { id: "profile",  title: "Profil",       icon: <span>👤</span>, dockDefault: true,  load: () => import("../apps/profile/ProfileApp") },
+  { id: "mdt",      title: "MDT",          icon: <span>🛡️</span>, dockDefault: true,  requiredRoles: ["police", "admin"], load: () => import("../apps/mdt/MdtApp") },
+  { id: "cases",    title: "Ügyek",        icon: <span>📁</span>, dockDefault: true,  requiredRoles: ["police", "admin"], load: () => import("../apps/cases/CasesApp") },
+  { id: "evidence", title: "Bizonyítékok", icon: <span>🧾</span>, dockDefault: true,  requiredRoles: ["police", "admin"], load: () => import("../apps/evidence/EvidenceApp") },
+  { id: "bank",     title: "Bank",         icon: <span>🏦</span>, dockDefault: true,  load: () => import("../apps/bank/BankApp") },
+  { id: "business", title: "Vállalkozás",  icon: <span>🏢</span>, dockDefault: true,  load: () => import("../apps/business/BusinessApp") },
+  { id: "settings", title: "Beállítások",  icon: <span>⚙️</span>, dockDefault: true,  load: () => import("../apps/settings/SettingsApp") },
+  { id: "notes",    title: "Jegyzetek",    icon: <span>📝</span>, dockDefault: false, load: () => import("../apps/notes/NotesApp") },
 ];
