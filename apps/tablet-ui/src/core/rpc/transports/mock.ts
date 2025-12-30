@@ -427,7 +427,7 @@ export function createMockTransport(): RpcTransport {
             tags: normalizeTagList(["Dispatch"], tagCatalog),
             involved: [],
             vehicles: [],
-            status: "SUBMITTED",
+            status: "DRAFT",
             submittedAt: createdAt,
             createdAt,
             updatedAt: createdAt,
