@@ -37,6 +37,18 @@ type EvidenceItem = {
   events?: EvidenceEvent[];
 };
 
+type CaseRequestStatus = "PENDING" | "APPROVED" | "REJECTED";
+
+type CaseRequest = {
+  id: string;
+  ts: string;
+  reportId: string;
+  reportTitle: string;
+  note?: string | null;
+  createdBy: string;
+  status: CaseRequestStatus;
+};
+
 const EVIDENCE_KEY = "hpx:evidence:v1";
 const OPEN_EVIDENCE_KEY = "hpx:evidence:openEvidenceId:v1";
 const REQUESTS_KEY = "hpx:cases:requests:v1";
@@ -114,8 +126,34 @@ function pushEvent(e: EvidenceItem, action: EvidenceEventAction, by: string, not
   return { ...e, events: [nextEv, ...events].slice(0, 80) };
 }
 
-export default function ReportEvidencePanel(props: { reportId: string; actorName: string }) {
-  const { reportId, actorName } = props;
+function requestCaseFromReport(reportId: string, reportTitle: string, actorName: string): void {
+  const note = (prompt("Ügy javaslat indoklás (opcionális):", "") ?? "").trim() || null;
+
+  const req: CaseRequest = {
+    id: makeId(),
+    ts: nowIso(),
+    reportId,
+    reportTitle,
+    note,
+    createdBy: actorName,
+    status: "PENDING",
+  };
+
+  const raw = safeParseJson<unknown>(localStorage.getItem(REQUESTS_KEY), []);
+  const arr = Array.isArray(raw) ? raw : [];
+  const next = [req, ...arr].slice(0, 200);
+
+  try {
+    localStorage.setItem(REQUESTS_KEY, JSON.stringify(next));
+  } catch {
+    // no-op
+  }
+
+  notify("Iktatás", "Ügy javaslat leadva (Iktatás appban jóváhagyható).", "success");
+}
+
+export default function ReportEvidencePanel(props: { reportId: string; reportTitle?: string; actorName: string }) {
+  const { reportId, reportTitle, actorName } = props;
 
   const [items, setItems] = useState<EvidenceItem[]>(() => {
     const raw = safeParseJson<unknown>(localStorage.getItem(EVIDENCE_KEY), []);
@@ -125,7 +163,7 @@ export default function ReportEvidencePanel(props: { reportId: string; actorName
   const [q, setQ] = useState<string>("");
 
   useEffect(() => {
-    // Magyar komment: ha EvidenceApp módosít, itt frissítsünk (simple poll, olcsó)
+    // Magyar komment: EvidenceApp módosításait felvesszük (poll)
     const t = window.setInterval(() => {
       const raw = safeParseJson<unknown>(localStorage.getItem(EVIDENCE_KEY), []);
       setItems(normalizeEvidenceList(raw));
@@ -177,7 +215,6 @@ export default function ReportEvidencePanel(props: { reportId: string; actorName
         updatedAt: nowIso(),
       };
 
-      // Magyar komment: audit csak actionra
       return pushEvent(updated, "Mentve", actorName, `Jelentéshez rendelve: ${reportId}`);
     });
 
@@ -205,45 +242,16 @@ export default function ReportEvidencePanel(props: { reportId: string; actorName
     notify("MDT • Bizonyítékok", "Bizonyíték leválasztva.", "info");
   }
 
-  
-type CaseRequest = {
-  id: string;
-  ts: string;
-  reportId: string;
-  reportTitle: string;
-  note?: string | null;
-  createdBy: string;
-  status: "PENDING" | "APPROVED" | "REJECTED";
-};
-
-function requestCaseFromReport(reportId: string, reportTitle: string, actorName: string): void {
-  const note = (prompt("Ügy javaslat indoklás (opcionális):", "") ?? "").trim() || null;
-
-  const req: CaseRequest = {
-    id: makeId(),
-    ts: nowIso(),
-    reportId,
-    reportTitle,
-    note,
-    createdBy: actorName,
-    status: "PENDING",
-  };
-
-  const raw = safeParseJson<unknown>(localStorage.getItem(REQUESTS_KEY), []);
-  const arr = Array.isArray(raw) ? raw : [];
-  const next = [req, ...arr].slice(0, 200);
-
-  try { localStorage.setItem(REQUESTS_KEY, JSON.stringify(next)); } catch {}
-
-  notify("Iktatás", "Ügy javaslat leadva (Iktatás appban jóváhagyható).", "success");
-}
-
-function openEvidence(evidenceId: string): void {
+  function openEvidence(evidenceId: string): void {
     try {
       localStorage.setItem(OPEN_EVIDENCE_KEY, JSON.stringify(evidenceId));
-    } catch {}
+    } catch {
+      // no-op
+    }
     notify("Bizonyítékok", "Nyisd meg a Bizonyítékok appot (rá fog állni).", "info");
   }
+
+  const caseTitle = (reportTitle && reportTitle.trim()) ? reportTitle.trim() : `Jelentés • ${reportId}`;
 
   return (
     <div style={{ border: "1px solid rgba(255,255,255,0.10)", padding: 10, marginBottom: 10 }}>
@@ -253,6 +261,12 @@ function openEvidence(evidenceId: string): void {
           <div style={{ opacity: 0.7, fontSize: 12 }}>
             Jelentés ID: <b>{reportId}</b> • Kapcsolt: <b>{linked.length}</b>
           </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button className="hpx-btn" onClick={() => requestCaseFromReport(reportId, caseTitle, actorName)}>
+            Ügy javaslat
+          </button>
         </div>
       </div>
 
@@ -267,7 +281,9 @@ function openEvidence(evidenceId: string): void {
                 <div key={e.id} style={{ border: "1px solid rgba(255,255,255,0.10)", padding: 8 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                     <div style={{ fontWeight: 900 }}>{e.label}</div>
-                    <div style={{ opacity: 0.7, fontSize: 12 }}>{String(e.type ?? "—")} • {String(e.status ?? "—")}</div>
+                    <div style={{ opacity: 0.7, fontSize: 12 }}>
+                      {String(e.type ?? "—")} • {String(e.status ?? "—")}
+                    </div>
                   </div>
 
                   <div style={{ opacity: 0.75, fontSize: 12, marginTop: 6 }}>
@@ -314,8 +330,11 @@ function openEvidence(evidenceId: string): void {
               <div key={e.id} style={{ border: "1px solid rgba(255,255,255,0.10)", padding: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                   <div style={{ fontWeight: 900 }}>{e.label}</div>
-                  <div style={{ opacity: 0.7, fontSize: 12 }}>{String(e.type ?? "—")} • {String(e.status ?? "—")}</div>
+                  <div style={{ opacity: 0.7, fontSize: 12 }}>
+                    {String(e.type ?? "—")} • {String(e.status ?? "—")}
+                  </div>
                 </div>
+
                 <div style={{ opacity: 0.75, fontSize: 12, marginTop: 6 }}>
                   ID: {e.id} • Jelentés: <b>{e.reportId ?? "—"}</b>
                 </div>
@@ -335,7 +354,7 @@ function openEvidence(evidenceId: string): void {
         </div>
 
         <div style={{ marginTop: 10, opacity: 0.65, fontSize: 12 }}>
-          Audit csak műveleteknél íródik (nem gépelésre) → nem fog “13 betű = 13 mentés” lenni.
+          Audit csak műveleteknél íródik (nem gépelésre).
         </div>
       </div>
     </div>
