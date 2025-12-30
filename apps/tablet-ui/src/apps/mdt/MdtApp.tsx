@@ -427,21 +427,56 @@ export default function MdtApp() {
     await refreshReports();
   }
 
-  async function createReport(payload: { type: MdtReportType; title: string; location: string; tags: string[]; involved: MdtReportInvolved[]; vehicles: string[] }): Promise<void> {
-    const res = await rpcCall(
-      "mdt:createReport",
-      { type: payload.type, title: payload.title, location: payload.location, tags: payload.tags, involved: payload.involved, vehicles: payload.vehicles, fullText: "<p></p>", actorCid, actorName },
-      { timeoutMs: 4000 }
-    );
+  async function createReport(payload: {
+    type: MdtReportType;
+    title: string;
+    location: string;
+    tags?: string[];
+    involved?: MdtReportInvolved[];
+    vehicles?: string[];
+  }): Promise<void> {
+    const title = (payload.title ?? "").trim();
+    if (!title) {
+      notify("Jelentések", "A cím kötelező.", "warning");
+      return;
+    }
 
-    setNewOpen(false);
-    setNewTitle("");
-    setNewLocation("");
-    setNewTags([]);
+    try {
+      const res = await rpcCall(
+        "mdt:createReport",
+        {
+          type: payload.type,
+          title,
+          location: (payload.location ?? "—").trim() || "—",
+          tags: payload.tags ?? [],
+          involved: payload.involved ?? [],
+          vehicles: payload.vehicles ?? [],
+          fullText: "<p></p>",
+          actorCid,
+          actorName,
+        } as any,
+        { timeoutMs: 4000 }
+      );
 
-    await refreshReports();
-    await openReport(res.report.id);
+      setNewOpen(false);
+      setNewTitle("");
+      setNewLocation("");
+      setNewTags([]);
+
+      await refreshReports();
+
+      if (res?.report?.id) {
+        await openReport(res.report.id);
+        notify("Jelentések", "Jelentés létrehozva.", "success");
+      } else {
+        notify("Jelentések", "Hiba: nincs report.id a válaszban.", "error");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      notify("Jelentések", "Hiba: " + msg, "error");
+    }
   }
+
 
   function updateInvolvedRole(cid: number, role: MdtInvolvedRole): void {
     if (!reportDetail) return;
