@@ -69,6 +69,19 @@ export default function ReportEditor(props: Props) {
     const url = prompt("Link (https://...):", "https://") ?? "";
     const u = url.trim();
     if (!u) return;
+
+    // Magyar komment: XSS védelem - csak http/https URL-ek engedélyezettek
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        alert("Csak http:// vagy https:// kezdetű linkek engedélyezettek.");
+        return;
+      }
+    } catch {
+      alert("Érvénytelen URL formátum.");
+      return;
+    }
+
     exec("createLink", u);
     handleInput();
   }
@@ -85,9 +98,24 @@ export default function ReportEditor(props: Props) {
     const u = url.trim();
     if (!u) return;
 
+    // Magyar komment: XSS védelem - csak http/https URL-ek engedélyezettek
+    try {
+      const parsed = new URL(u);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        alert("Csak http:// vagy https:// kezdetű kép URL-ek engedélyezettek.");
+        return;
+      }
+    } catch {
+      alert("Érvénytelen URL formátum.");
+      return;
+    }
+
+    // Magyar komment: XSS védelem - HTML attribútum escapelés
+    const escapedUrl = u.replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+
     exec(
       "insertHTML",
-      `<img src="${u}" alt="kép" style="max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid rgba(255,255,255,0.12);" />`
+      `<img src="${escapedUrl}" alt="kép" style="max-width:100%;height:auto;display:block;margin:8px 0;border:1px solid rgba(255,255,255,0.12);" />`
     );
     handleInput();
   }
